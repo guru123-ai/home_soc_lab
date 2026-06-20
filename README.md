@@ -28,9 +28,9 @@ Layer 1  Physical / Hypervisor      << Proxmox VE >>          ◄── PHASE 1
 | VLAN | Zone | Subnet | Internet | Role |
 |-----:|------|--------|:--------:|------|
 | 10 | Management | `10.10.10.0/24` | controlled | Proxmox, pfSense, SIEM UI, analyst |
-| 20 | Attacker | `10.10.20.0/24` | ✅ | Kali / red team |
-| 30 | Victim | `10.10.30.0/24` | ❌ | vulnerable endpoints |
-| 99 | Monitoring | `10.10.99.0/24` | ❌ | SIEM sensor SPAN sink |
+| 20 | Attacker | `10.10.20.0/24` | enabled | Kali / red team |
+| 30 | Victim | `10.10.30.0/24` | disabled | vulnerable endpoints |
+| 99 | Monitoring | `10.10.99.0/24` | disabled | SIEM sensor SPAN sink |
 
 Full design + diagram: **[`network/NETWORK_ARCHITECTURE.md`](network/NETWORK_ARCHITECTURE.md)**.
 
@@ -88,7 +88,7 @@ treats the home LAN (`192.168.1.0/24` by default) as untrusted — adjust the
 
 ## 4. Step-by-step deployment
 
-> ⚠️ Several steps (OS installs, pfSense interface assignment) require console
+> Warning: Several steps (OS installs, pfSense interface assignment) require console
 > interaction and cannot be fully automated. The scripts handle VM creation,
 > networking, and the traffic mirror.
 
@@ -144,13 +144,13 @@ Run these from hosts in each zone (expected results in parentheses):
 
 | Test | From | To | Expect |
 |------|------|----|--------|
-| Internet | Kali (VLAN20) | `1.1.1.1` | ✅ reachable |
-| Attack path | Kali | victim `10.10.30.x` | ✅ reachable |
-| No pivot | Kali | mgmt `10.10.10.2` | ❌ blocked |
-| No home pivot | Kali | `192.168.1.1` | ❌ blocked |
-| Victim isolation | Victim (VLAN30) | `1.1.1.1` | ❌ blocked |
-| Victim isolation | Victim | mgmt/home | ❌ blocked |
-| Admin reach | Mgmt (VLAN10) | all zones | ✅ reachable |
+| Internet | Kali (VLAN20) | `1.1.1.1` |  reachable |
+| Attack path | Kali | victim `10.10.30.x` |  reachable |
+| No pivot | Kali | mgmt `10.10.10.2` |  blocked |
+| No home pivot | Kali | `192.168.1.1` |  blocked |
+| Victim isolation | Victim (VLAN30) | `1.1.1.1` |  blocked |
+| Victim isolation | Victim | mgmt/home |  blocked |
+| Admin reach | Mgmt (VLAN10) | all zones |  reachable |
 | Mirror feed | sensor `mon` NIC | — | sees mixed src/dst traffic |
 
 If every row matches, Phase 1 is correctly deployed.
