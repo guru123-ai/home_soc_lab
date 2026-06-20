@@ -1,0 +1,251 @@
+<?xml version="1.0"?>
+<!--
+  HomeSOClab - pfSense configuration (Phase 1)
+  Import via: Diagnostics -> Backup & Restore -> Restore configuration.
+
+  BEFORE IMPORTING:
+   * Confirm interface device names match your VM (vtnet0 = WAN, vtnet1 = trunk).
+   * Replace the WAN block / HomeLAN alias if your home LAN is not 192.168.1.0/24.
+   * Change the admin password hash and SSH keys after first boot.
+
+  This file is intentionally trimmed to the objects that matter for the lab
+  (system, interfaces, vlans, dhcpd, nat, filter, aliases). pfSense will merge
+  defaults for omitted sections on restore. Treat it as a readable reference
+  ruleset; the authoritative human docs are in rules/*.md.
+-->
+<pfsense>
+  <version>21.7</version>
+  <system>
+    <hostname>fw01</hostname>
+    <domain>soclab.local</domain>
+    <timezone>UTC</timezone>
+    <dnsserver>10.10.10.1</dnsserver>
+    <webgui>
+      <protocol>https</protocol>
+      <port>443</port>
+    </webgui>
+    <ssh>
+      <enable>enabled</enable>
+    </ssh>
+  </system>
+
+  <!-- ====================== ALIASES ====================== -->
+  <aliases>
+    <alias>
+      <name>HomeLAN</name>
+      <type>network</type>
+      <address>192.168.1.0/24</address>
+      <descr>Existing home LAN - untrusted, lab must never reach it</descr>
+    </alias>
+    <alias>
+      <name>RFC1918</name>
+      <type>network</type>
+      <address>10.0.0.0/8 172.16.0.0/12 192.168.0.0/16</address>
+      <descr>All private ranges (used to scope internet-only allows)</descr>
+    </alias>
+    <alias>
+      <name>LabAdmin</name>
+      <type>network</type>
+      <address>10.10.10.0/24 10.10.99.0/24</address>
+      <descr>Management + Monitoring planes (off-limits to attacker/victim)</descr>
+    </alias>
+  </aliases>
+
+  <!-- ====================== VLANs ====================== -->
+  <vlans>
+    <vlan><if>vtnet1</if><tag>10</tag><descr>MGMT</descr><vlanif>vtnet1.10</vlanif></vlan>
+    <vlan><if>vtnet1</if><tag>20</tag><descr>ATTACKER</descr><vlanif>vtnet1.20</vlanif></vlan>
+    <vlan><if>vtnet1</if><tag>30</tag><descr>VICTIM</descr><vlanif>vtnet1.30</vlanif></vlan>
+    <vlan><if>vtnet1</if><tag>99</tag><descr>MONITORING</descr><vlanif>vtnet1.99</vlanif></vlan>
+  </vlans>
+
+  <!-- ====================== INTERFACES ====================== -->
+  <interfaces>
+    <wan>
+      <if>vtnet0</if>
+      <descr>WAN</descr>
+      <enable></enable>
+      <ipaddr>dhcp</ipaddr>
+      <blockpriv></blockpriv>     <!-- block RFC1918 inbound on WAN -->
+      <blockbogons></blockbogons>
+    </wan>
+    <lan>
+      <if>vtnet1.10</if>
+      <descr>MGMT</descr>
+      <enable></enable>
+      <ipaddr>10.10.10.1</ipaddr>
+      <subnet>24</subnet>
+    </lan>
+    <opt1>
+      <if>vtnet1.20</if>
+      <descr>ATTACKER</descr>
+      <enable></enable>
+      <ipaddr>10.10.20.1</ipaddr>
+      <subnet>24</subnet>
+    </opt1>
+    <opt2>
+      <if>vtnet1.30</if>
+      <descr>VICTIM</descr>
+      <enable></enable>
+      <ipaddr>10.10.30.1</ipaddr>
+      <subnet>24</subnet>
+    </opt2>
+    <opt3>
+      <if>vtnet1.99</if>
+      <descr>MONITORING</descr>
+      <enable></enable>
+      <ipaddr>10.10.99.1</ipaddr>
+      <subnet>24</subnet>
+    </opt3>
+  </interfaces>
+
+  <!-- ====================== DHCP ====================== -->
+  <dhcpd>
+    <lan>
+      <enable></enable>
+      <range><from>10.10.10.100</from><to>10.10.10.199</to></range>
+      <gateway>10.10.10.1</gateway>
+      <dnsserver>10.10.10.1</dnsserver>
+      <domain>mgmt.soclab.local</domain>
+      <defaultleasetime>7200</defaultleasetime>
+    </lan>
+    <opt1>
+      <enable></enable>
+      <range><from>10.10.20.100</from><to>10.10.20.199</to></range>
+      <gateway>10.10.20.1</gateway>
+      <dnsserver>10.10.20.1</dnsserver>
+      <domain>atk.soclab.local</domain>
+      <defaultleasetime>7200</defaultleasetime>
+    </opt1>
+    <opt2>
+      <enable></enable>
+      <range><from>10.10.30.100</from><to>10.10.30.199</to></range>
+      <gateway>10.10.30.1</gateway>
+      <dnsserver>10.10.30.1</dnsserver>
+      <domain>vic.soclab.local</domain>
+      <defaultleasetime>7200</defaultleasetime>
+    </opt2>
+    <!-- opt3 (MONITORING) DHCP intentionally disabled: sensor is static -->
+  </dhcpd>
+
+  <!-- ====================== OUTBOUND NAT (hybrid) ====================== -->
+  <nat>
+    <outbound>
+      <mode>hybrid</mode>
+      <rule>
+        <interface>wan</interface>
+        <source><network>10.10.10.0/24</network></source>
+        <descr>MGMT outbound NAT</descr>
+        <target></target>
+      </rule>
+      <rule>
+        <interface>wan</interface>
+        <source><network>10.10.20.0/24</network></source>
+        <descr>ATTACKER outbound NAT</descr>
+        <target></target>
+      </rule>
+      <!-- No NAT for VICTIM(30) or MONITORING(99): they must never egress -->
+    </outbound>
+  </nat>
+
+  <!-- ====================== FIREWALL RULES ====================== -->
+  <!-- Evaluated per-interface, top-down, first match wins. Default = deny. -->
+  <filter>
+
+    <!-- == MGMT (lan): admin/SIEM plane, reach all zones, no home LAN == -->
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp</protocol>
+      <source><network>lan</network></source>
+      <destination><network>(self)</network><port>443</port></destination>
+      <descr>MGMT -> firewall GUI</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <source><network>lan</network></source>
+      <destination><network>10.10.20.0/24</network></destination>
+      <descr>MGMT -> Attacker</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <source><network>lan</network></source>
+      <destination><network>10.10.30.0/24</network></destination>
+      <descr>MGMT -> Victim (triage)</descr>
+    </rule>
+    <rule>
+      <type>block</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <log></log>
+      <source><network>lan</network></source>
+      <destination><address>HomeLAN</address></destination>
+      <descr>MGMT -> block home LAN (no pivot)</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>lan</interface><ipprotocol>inet</ipprotocol>
+      <source><network>lan</network></source>
+      <destination><not></not><address>RFC1918</address></destination>
+      <descr>MGMT -> internet only</descr>
+    </rule>
+
+    <!-- == ATTACKER (opt1): internet + victim, isolated from admin/home == -->
+    <rule>
+      <type>block</type><interface>opt1</interface><ipprotocol>inet</ipprotocol>
+      <log></log>
+      <source><network>opt1</network></source>
+      <destination><address>LabAdmin</address></destination>
+      <descr>ATTACKER -> block MGMT/Monitoring</descr>
+    </rule>
+    <rule>
+      <type>block</type><interface>opt1</interface><ipprotocol>inet</ipprotocol>
+      <log></log>
+      <source><network>opt1</network></source>
+      <destination><address>HomeLAN</address></destination>
+      <descr>ATTACKER -> block home LAN</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>opt1</interface><ipprotocol>inet</ipprotocol>
+      <source><network>opt1</network></source>
+      <destination><network>10.10.30.0/24</network></destination>
+      <descr>ATTACKER -> Victim (kill chain)</descr>
+    </rule>
+    <rule>
+      <type>pass</type><interface>opt1</interface><ipprotocol>inet</ipprotocol>
+      <source><network>opt1</network></source>
+      <destination><not></not><address>RFC1918</address></destination>
+      <descr>ATTACKER -> internet only</descr>
+    </rule>
+
+    <!-- == VICTIM (opt2): DNS/NTP to firewall only, otherwise deny all == -->
+    <rule>
+      <type>pass</type><interface>opt2</interface><ipprotocol>inet</ipprotocol>
+      <protocol>tcp/udp</protocol>
+      <source><network>opt2</network></source>
+      <destination><network>(self)</network><port>53</port></destination>
+      <descr>VICTIM -> firewall DNS only</descr>
+    </rule>
+    <rule>
+      <type>block</type><interface>opt2</interface><ipprotocol>inet</ipprotocol>
+      <log></log>
+      <source><network>opt2</network></source>
+      <destination><any></any></destination>
+      <descr>VICTIM -> deny all (no internet, no lateral)</descr>
+    </rule>
+
+    <!-- == MONITORING (opt3): receive-only, deny anything sourced here == -->
+    <rule>
+      <type>block</type><interface>opt3</interface><ipprotocol>inet</ipprotocol>
+      <log></log>
+      <source><network>opt3</network></source>
+      <destination><any></any></destination>
+      <descr>MONITORING -> sensor capture NIC is receive-only</descr>
+    </rule>
+
+  </filter>
+
+  <!-- ====================== DNS RESOLVER ====================== -->
+  <unbound>
+    <enable></enable>
+    <dnssec></dnssec>
+    <active_interface>lan,opt1,opt2</active_interface>
+    <outgoing_interface>wan</outgoing_interface>
+  </unbound>
+</pfsense>
