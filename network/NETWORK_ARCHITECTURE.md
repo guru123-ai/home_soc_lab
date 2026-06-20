@@ -100,6 +100,7 @@ an explicit allow-list policy (default deny).
 | **VICTIM**      |  blocked   |    blocked     |   —    |     blocked      |    blocked     |    blocked     |
 | **MONITORING**  |  blocked   |    blocked     |   blocked    |     —      |    blocked     |    blocked     |
 
+
 Key policy decisions:
 - **Management → everything**: admins/SIEM must reach all zones for triage.
 - **Attacker → Victim only**: realistic kill-chain; attacker cannot touch the
