@@ -25,9 +25,9 @@ an explicit allow-list policy (default deny).
 | VLAN ID | Zone | Subnet (CIDR) | Gateway (pfSense) | DHCP Pool | Internet | Purpose |
 |--------:|------|---------------|-------------------|-----------|:--------:|---------|
 | 10 | **Management** | `10.10.10.0/24` | `10.10.10.1` | `.100–.199` | Controlled | Proxmox, pfSense, SIEM UI, analyst WS |
-| 20 | **Attacker**   | `10.10.20.0/24` | `10.10.20.1` | `.100–.199` | ✅ Yes | Kali / red-team tooling |
-| 30 | **Victim**     | `10.10.30.0/24` | `10.10.30.1` | `.100–.199` | ❌ No  | Vulnerable endpoints / targets |
-| 99 | **Monitoring** | `10.10.99.0/24` | `10.10.99.1` | static only | ❌ No  | SPAN sink + SIEM sensor sniff NIC |
+| 20 | **Attacker**   | `10.10.20.0/24` | `10.10.20.1` | `.100–.199` |  Yes | Kali / red-team tooling |
+| 30 | **Victim**     | `10.10.30.0/24` | `10.10.30.1` | `.100–.199` |  No  | Vulnerable endpoints / targets |
+| 99 | **Monitoring** | `10.10.99.0/24` | `10.10.99.1` | static only |  No  | SPAN sink + SIEM sensor sniff NIC |
 
 ### Reserved static addresses (outside DHCP pools)
 
@@ -92,14 +92,13 @@ an explicit allow-list policy (default deny).
 
 ## 4. Traffic Flow Matrix (Firewall Policy Summary)
 
-`✅ = allowed`, `❌ = blocked (default deny)`, `⚠️ = restricted to specific ports`
 
-| From ↓  \  To → | MGMT | ATTACKER | VICTIM | MONITORING | Home LAN | Internet |
+| From   \  To  | MGMT | ATTACKER | VICTIM | MONITORING | Home LAN | Internet |
 |-----------------|:----:|:--------:|:------:|:----------:|:--------:|:--------:|
-| **MGMT**        |  —   |    ✅    |   ✅   |     ⚠️     |    ❌    |    ✅    |
-| **ATTACKER**    |  ❌  |    —     |   ✅   |     ❌     |    ❌    |    ✅    |
-| **VICTIM**      |  ❌  |    ❌    |   —    |     ❌     |    ❌    |    ❌    |
-| **MONITORING**  |  ❌  |    ❌    |   ❌   |     —      |    ❌    |    ❌    |
+| **MGMT**        |  —   |allowed   |  allowed    |     restricted     |    blocked     |    allowed    |
+| **ATTACKER**    |  blocked   |    —     |   allowed   |     blocked      |   blocked     |    allowed    |
+| **VICTIM**      |  blocked   |    blocked     |   —    |     blocked      |    blocked     |    blocked     |
+| **MONITORING**  |  blocked   |    blocked     |   blocked    |     —      |    blocked     |    blocked     |
 
 Key policy decisions:
 - **Management → everything**: admins/SIEM must reach all zones for triage.
